@@ -19,36 +19,34 @@ jobs:
           - { slug: linux-aarch64,   runner: ubuntu-22.04-arm }
           - { slug: windows-x64,     runner: windows-latest }
           - { slug: macos-universal, runner: macos-14 }
+    defaults:
+      run:
+        shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      # Build + stage + zip. macOS builds a universal (x86_64+arm64) dylib,
-      # which the CMakeLists does automatically when CMAKE_OSX_ARCHITECTURES
-      # is unset.
-      - name: Package (unix)
-        if: runner.os != 'Windows'
-        run: |
-          chmod +x scripts/package.sh
-          scripts/package.sh ${{ matrix.slug }}
-
-      - name: Package (windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
+      # Build and stage the ready-to-ship folder (staging/<PLUGIN_ID>/).
+      # macOS builds a universal (x86_64+arm64) dylib, which the CMakeLists
+      # does automatically when CMAKE_OSX_ARCHITECTURES is unset.
+      - name: Build & stage
         run: |
           cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release
-          cmake --install build --prefix dist --config Release
-          $id = (Select-String -Path plugin.cfg -Pattern '^id\s*=\s*"(.*)"').Matches.Groups[1].Value
-          Compress-Archive -Path "dist/$id" -DestinationPath "dist/myplugin-${{ matrix.slug }}.zip"
+          cmake --install build --prefix staging --config Release
 
-      - uses: actions/upload-artifact@v4
+      # Upload the FOLDER, not a pre-made zip. upload-artifact always wraps its
+      # input in one zip on download — handing it a .zip would nest zip-in-zip.
+      # The downloadable artifact is a single myplugin-<slug>.zip containing
+      # the <PLUGIN_ID>/ folder.
+      - uses: actions/upload-artifact@v5
         with:
           name: myplugin-${{ matrix.slug }}
-          path: dist/myplugin-${{ matrix.slug }}.zip
+          path: staging/
           if-no-files-found: error
 
-  # On a version tag (v1.2.3), gather all platform zips into a GitHub Release —
-  # these are the files your plugin store serves.
+  # On a version tag (v1.2.3), gather every platform folder and zip each into a
+  # single per-platform archive attached to a GitHub Release — the files your
+  # plugin store serves.
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
@@ -56,9 +54,18 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      # Each artifact extracts to artifacts/myplugin-<slug>/<PLUGIN_ID>/...
+      - uses: actions/download-artifact@v5
         with:
           path: artifacts
+      - name: Zip each platform
+        run: |
+          mkdir -p release
+          for dir in artifacts/*/; do
+            slug="$(basename "$dir")"          # e.g. myplugin-linux-x64
+            ( cd "$dir" && zip -r "$GITHUB_WORKSPACE/release/${slug}.zip" . )
+          done
+          ls -l release
       - uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*.zip
+          files: release/*.zip
