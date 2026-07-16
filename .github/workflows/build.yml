@@ -1,0 +1,64 @@
+name: build
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.slug }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { slug: linux-x64,       runner: ubuntu-22.04 }
+          - { slug: linux-aarch64,   runner: ubuntu-22.04-arm }
+          - { slug: windows-x64,     runner: windows-latest }
+          - { slug: macos-universal, runner: macos-14 }
+    steps:
+      - uses: actions/checkout@v4
+
+      # Build + stage + zip. macOS builds a universal (x86_64+arm64) dylib,
+      # which the CMakeLists does automatically when CMAKE_OSX_ARCHITECTURES
+      # is unset.
+      - name: Package (unix)
+        if: runner.os != 'Windows'
+        run: |
+          chmod +x scripts/package.sh
+          scripts/package.sh ${{ matrix.slug }}
+
+      - name: Package (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release
+          cmake --install build --prefix dist --config Release
+          $id = (Select-String -Path plugin.cfg -Pattern '^id\s*=\s*"(.*)"').Matches.Groups[1].Value
+          Compress-Archive -Path "dist/$id" -DestinationPath "dist/myplugin-${{ matrix.slug }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: myplugin-${{ matrix.slug }}
+          path: dist/myplugin-${{ matrix.slug }}.zip
+          if-no-files-found: error
+
+  # On a version tag (v1.2.3), gather all platform zips into a GitHub Release —
+  # these are the files your plugin store serves.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*.zip
