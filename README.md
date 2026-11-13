@@ -196,18 +196,20 @@ The `[libraries]` table maps platform/arch → filename. Note the naming rules:
 
 CMake picks the entry for the platform it is building for and names the
 library to match: a 64-bit Windows build uses `windows.x64`, a 32-bit one
-uses `windows.x86`.
+uses `windows.x86`. If you don't want to ship a platform, delete its entry from
+`plugin.cfg` and its row from the CI matrix.
 
 Because Linux and macOS use the **same filename across architectures**, a single
 folder holds only one binary per OS. So:
 
 - **Serve a separate download per OS+arch** (`linux-x64`, `linux-aarch64`,
-  `windows-x64`), and
+  `windows-x64`, `windows-x86`), and
 - **ship macOS as a universal binary** (one `.dylib` with both `x86_64` and
   `arm64`). The CMakeLists does this automatically, and checks that
   `macos.x64` and `macos.arm64` name the same file.
 
-Only Windows encodes the arch in the filename, so x86 + x64 can coexist.
+Only Windows encodes the arch in the filename, so x86 and x64 can coexist. You
+can merge the two Windows zips into one download if you prefer.
 
 ### Platform compatibility
 
@@ -226,15 +228,21 @@ Only Windows encodes the arch in the filename, so x86 + x64 can coexist.
 
 ## CI / releasing
 
-[`.github/workflows/build.yml`](.github/workflows/build.yml) builds all four
-targets on native runners:
+Building for every OS is done on GitHub Actions: a local build only produces
+the library for the machine you're on. Push the repo to GitHub (Actions
+enabled) and [`.github/workflows/build.yml`](.github/workflows/build.yml)
+builds all five targets on native runners:
 
-| slug              | runner              |
-|-------------------|---------------------|
-| `linux-x64`       | `ubuntu-22.04`      |
-| `linux-aarch64`   | `ubuntu-22.04-arm`  |
-| `windows-x64`     | `windows-latest`    |
-| `macos-universal` | `macos-14`          |
+| slug              | runner              | `plugin.cfg` entry              |
+|-------------------|---------------------|---------------------------------|
+| `linux-x64`       | `ubuntu-22.04`      | `linux.x64`                     |
+| `linux-aarch64`   | `ubuntu-22.04-arm`  | `linux.aarch64`                 |
+| `windows-x64`     | `windows-latest`    | `windows.x64`                   |
+| `windows-x86`     | `windows-latest`    | `windows.x86`                   |
+| `macos-universal` | `macos-14`          | `macos.x64` + `macos.arm64`     |
+
+The workflow runs on pushes to `main`/`master`, on pull requests, on version
+tags, and manually from the Actions tab.
 
 Every push uploads per-platform zips (`<id lowercase>-<slug>`) as build
 artifacts. Pushing a `vX.Y.Z` tag also collects them into a GitHub Release.
@@ -243,6 +251,43 @@ Those zips are what your store serves.
 ```bash
 git tag v1.0.0 && git push origin v1.0.0
 ```
+
+## Dependencies
+
+The template builds plain C++ from `src/` with no outside libraries. If your
+plugin needs one, it has to build on **every** CI target, and the user must not
+have to install anything. In order of preference:
+
+1. **Build it from source and link it statically.** Use CMake `FetchContent`
+   (there's a commented example in [`CMakeLists.txt`](CMakeLists.txt)) or copy
+   the source into a `third_party/` folder and `add_subdirectory()` it.
+   Header-only libraries just need an include path. This works the same on
+   every runner, it gives you a universal macOS build for free (the
+   CMakeLists sets both architectures globally), and the result is still one
+   self-contained file. Build dependencies as static libraries with
+   `CMAKE_POSITION_INDEPENDENT_CODE ON`, because they end up inside a shared
+   library.
+2. **Use a package manager in CI**, in the `Install dependencies` step of
+   [`build.yml`](.github/workflows/build.yml), which already has a slot for
+   each OS. Be aware of the catches:
+   - *Linux (apt):* the `-dev` packages usually ship only shared libraries, and
+     their static `.a` files are often not built as PIC, so they can't be
+     linked into a plugin. Linking the shared library means the user needs it
+     installed, which you can't rely on.
+   - *macOS (Homebrew):* bottles are built for one architecture, so they can't
+     be linked into the universal binary. Build from source instead (option 1).
+   - *Windows (vcpkg):* use the `x64-windows-static` / `x86-windows-static`
+     triplets, which match the template's static runtime (`/MT`).
+3. **Ship a shared library next to the plugin**, as a last resort (e.g. a
+   closed-source SDK). Put the `.dll` / `.so` / `.dylib` in the plugin folder
+   by adding an `install(FILES ...)` line to `CMakeLists.txt`, so it ends up in
+   `staging/<id>/` and in the zip. The plugin finds it there: VPX adds the
+   plugin folder to the DLL search path on Windows, and the template sets the
+   rpath to the plugin's folder on Linux (`$ORIGIN`) and macOS
+   (`@loader_path`). On Linux and macOS the library needs the same filename for
+   every arch, so ship it the same way as the plugin.
+
+Check each dependency's license: whatever you link ships inside your plugin.
 
 ## License
 

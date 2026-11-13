@@ -14,11 +14,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # cmake_args: extra configure flags per target. On Windows, -A picks the
+        # architecture; CMake then uses the matching plugin.cfg entry
+        # (windows.x64 -> plugin-<name>64.dll, windows.x86 -> plugin-<name>.dll).
         include:
-          - { slug: linux-x64,       runner: ubuntu-22.04 }
-          - { slug: linux-aarch64,   runner: ubuntu-22.04-arm }
-          - { slug: windows-x64,     runner: windows-latest }
-          - { slug: macos-universal, runner: macos-14 }
+          - { slug: linux-x64,       runner: ubuntu-22.04,     cmake_args: '' }
+          - { slug: linux-aarch64,   runner: ubuntu-22.04-arm, cmake_args: '' }
+          - { slug: windows-x64,     runner: windows-latest,   cmake_args: '-A x64' }
+          - { slug: windows-x86,     runner: windows-latest,   cmake_args: '-A Win32' }
+          - { slug: macos-universal, runner: macos-14,         cmake_args: '' }
     defaults:
       run:
         shell: bash
@@ -31,12 +35,30 @@ jobs:
           id="$(sed -n 's/^id[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' plugin.cfg)"
           echo "PLUGIN_SLUG=$(echo "$id" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
 
+      # Install your plugin's third-party dependencies here, per platform.
+      # Each runner builds natively, so install the library for that OS/arch.
+      # Anything the plugin loads at runtime must also end up in staging/<id>/
+      # (see "Dependencies" in the README).
+      - name: Install dependencies
+        run: |
+          case "${{ runner.os }}" in
+            Linux)
+              : # sudo apt-get update && sudo apt-get install -y libfoo-dev
+              ;;
+            macOS)
+              : # brew install foo   (Homebrew bottles are single-arch: see README)
+              ;;
+            Windows)
+              : # vcpkg install foo:${{ matrix.slug == 'windows-x86' && 'x86' || 'x64' }}-windows-static
+              ;;
+          esac
+
       # Build and stage the ready-to-ship folder (staging/<PLUGIN_ID>/).
       # macOS builds a universal (x86_64+arm64) dylib, which the CMakeLists
       # does automatically when CMAKE_OSX_ARCHITECTURES is unset.
       - name: Build & stage
         run: |
-          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release ${{ matrix.cmake_args }}
           cmake --build build --config Release
           cmake --install build --prefix staging --config Release
 

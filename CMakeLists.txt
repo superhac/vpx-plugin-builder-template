@@ -66,6 +66,14 @@ get_filename_component(PLUGIN_LIB_NAME "${PLUGIN_LIB_FILE}" NAME_WLE)
 get_filename_component(PLUGIN_LIB_EXT  "${PLUGIN_LIB_FILE}" LAST_EXT)
 message(STATUS "Plugin: ${PLUGIN_ID} -> ${PLUGIN_LIB_FILE} (${PLUGIN_LIB_KEY})")
 
+# macOS: build a universal binary so one .dylib covers macos.x64 AND macos.arm64.
+# Set globally (not just on the plugin target) so dependencies built from
+# source, e.g. with FetchContent, are universal too.
+# Override with -DCMAKE_OSX_ARCHITECTURES=arm64 for a single-arch build.
+if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
+   set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64")
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
@@ -83,6 +91,18 @@ target_include_directories(plugin PRIVATE "${CMAKE_SOURCE_DIR}/sdk" "${CMAKE_SOU
 # PLUGIN_ID is passed as a bare token so src/plugin_id.h can build the export
 # names (<id>PluginLoad / <id>PluginUnload) and the id string from it.
 target_compile_definitions(plugin PRIVATE PLUGIN_ID=${PLUGIN_ID})
+
+# ---------------------------------------------------------------------------
+# Third-party dependencies (see "Dependencies" in the README).
+# Preferred: build them from source and link statically, e.g.
+#
+#   include(FetchContent)
+#   FetchContent_Declare(fmt GIT_REPOSITORY https://github.com/fmtlib/fmt GIT_TAG 11.0.2)
+#   set(BUILD_SHARED_LIBS OFF)
+#   set(CMAKE_POSITION_INDEPENDENT_CODE ON)   # static libs go into a shared plugin
+#   FetchContent_MakeAvailable(fmt)
+#   target_link_libraries(plugin PRIVATE fmt::fmt)
+# ---------------------------------------------------------------------------
 
 # Export only the two PluginLoad/PluginUnload symbols; hide everything else.
 set_target_properties(plugin PROPERTIES
@@ -107,15 +127,15 @@ if(WIN32)
       target_link_libraries(plugin ws2_32)
    endif()
 elseif(APPLE)
-   # Build a universal binary so one .dylib covers macos.x64 AND macos.arm64.
-   # Override with -DCMAKE_OSX_ARCHITECTURES=arm64 for a single-arch build.
-   if(NOT CMAKE_OSX_ARCHITECTURES)
-      set_target_properties(plugin PROPERTIES OSX_ARCHITECTURES "x86_64;arm64")
-   endif()
+   # Universal binary: see CMAKE_OSX_ARCHITECTURES near the top.
+   # Look for bundled .dylib dependencies next to the plugin.
+   set_target_properties(plugin PROPERTIES INSTALL_RPATH "@loader_path" BUILD_WITH_INSTALL_RPATH ON)
 else() # Linux / *nix
    # --exclude-libs,ALL keeps the statically linked libstdc++/libgcc symbols
    # private, so they can't clash with the host's own C++ runtime.
    target_link_options(plugin PRIVATE -static-libgcc -static-libstdc++ -Wl,--exclude-libs,ALL)
+   # Look for bundled .so dependencies next to the plugin.
+   set_target_properties(plugin PROPERTIES INSTALL_RPATH "$ORIGIN" BUILD_WITH_INSTALL_RPATH ON)
 endif()
 
 # ---------------------------------------------------------------------------
