@@ -47,6 +47,10 @@ MSGPI_EXPORT void MSGPIAPI MyPluginPluginLoad(const uint32_t sessionId, const Ms
    endpointId = sessionId;
 
    // Fetch the VPX API table by broadcasting the "get API" request.
+   // Message names carry a version marker (e.g. "GetAPI:1"), so a host whose
+   // API is incompatible with these headers simply won't answer and vpxApi
+   // stays null. API tables also start with an `int version` field that only
+   // grows as entry points are appended.
    msgApi->BroadcastMsg(endpointId, getVpxApiId = msgApi->GetMsgID(VPXPI_NAMESPACE, VPXPI_MSG_GET_API), &vpxApi);
 
    // Subscribe to the events we care about.

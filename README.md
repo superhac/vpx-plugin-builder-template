@@ -29,15 +29,48 @@ symbols:
 plugin-builder/
 ├── CMakeLists.txt            # ~60 lines, no vpinball dependency
 ├── plugin.cfg               # manifest VPX scans (id, metadata, per-platform lib names)
-├── sdk/plugins/             # vendored SDK headers (header-only)
-│   ├── MsgPlugin.h          #   core messaging/settings ABI
-│   ├── ControllerPlugin.h   #   included by VPXPlugin.h
-│   ├── VPXPlugin.h          #   VPX events + PushNotification, etc.
-│   └── LoggingPlugin.h      #   optional host logging
+├── sdk/
+│   ├── VPINBALL_COMMIT      # vpinball commit the headers were synced from
+│   └── plugins/             # vendored SDK headers (header-only)
+│       ├── MsgPlugin.h          # core messaging/settings/threading ABI
+│       ├── VPXPlugin.h          # VPX events + VPXPluginAPI (notifications, input, textures, RunScript...)
+│       ├── ControllerPlugin.h   # controller/display/audio sources (included by VPXPlugin.h)
+│       ├── LoggingPlugin.h      # optional host logging
+│       ├── ScriptablePlugin.h   # expose scriptable objects to table scripts
+│       ├── PagedUIPlugin.h      # declarative in-game UI sheets (WIP upstream, unstable)
+│       ├── PluginStrings.h      # UTF-8 / native path helpers
+│       └── ColorSpace.h         # sRGB helpers for display frames
 ├── src/myplugin.cpp         # your plugin
 ├── scripts/package.sh       # build + stage + zip one platform
+├── scripts/update-sdk.sh    # re-sync sdk/plugins/ from vpinball
 └── .github/workflows/build.yml   # CI matrix: builds all platforms, releases on tag
 ```
+
+## Keeping the SDK in sync with VPX
+
+The headers in `sdk/plugins/` must match the VPX build you target. Refresh them
+from vpinball `master` (or any tag/commit) with:
+
+```bash
+scripts/update-sdk.sh            # master
+scripts/update-sdk.sh <ref>      # a tag or commit
+```
+
+The resolved commit is written to [`sdk/VPINBALL_COMMIT`](sdk/VPINBALL_COMMIT).
+Review the diff before committing: upstream may change the API.
+
+Two upstream conventions guard against mismatches:
+
+- **Message names end in a version marker**, e.g. `"GetAPI:1"`,
+  `"OnGameStart:1"`. When a message's format changes, its marker is bumped, so
+  a plugin built against stale headers simply gets no answer. It won't
+  misinterpret data. The host asserts that every `GetMsgID` name has a marker.
+- **API tables start with `int version`** (`MsgPluginAPI`, `VPXPluginAPI`,
+  `LoggingPluginAPI`). New entry points are appended and the version is bumped.
+  Check it before calling a function that was added later.
+
+If your plugin worked once and now `vpxApi` stays `nullptr` on a newer VPX,
+re-sync the headers and rebuild.
 
 ## Build locally
 
