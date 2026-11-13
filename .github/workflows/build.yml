@@ -25,6 +25,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Artifact/zip names come from the `id` in plugin.cfg (lowercased).
+      - name: Read plugin id
+        run: |
+          id="$(sed -n 's/^id[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' plugin.cfg)"
+          echo "PLUGIN_SLUG=$(echo "$id" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
       # Build and stage the ready-to-ship folder (staging/<PLUGIN_ID>/).
       # macOS builds a universal (x86_64+arm64) dylib, which the CMakeLists
       # does automatically when CMAKE_OSX_ARCHITECTURES is unset.
@@ -36,11 +42,11 @@ jobs:
 
       # Upload the FOLDER, not a pre-made zip. upload-artifact always wraps its
       # input in one zip on download — handing it a .zip would nest zip-in-zip.
-      # The downloadable artifact is a single myplugin-<slug>.zip containing
+      # The downloadable artifact is a single <id>-<slug>.zip containing
       # the <PLUGIN_ID>/ folder.
       - uses: actions/upload-artifact@v7
         with:
-          name: myplugin-${{ matrix.slug }}
+          name: ${{ env.PLUGIN_SLUG }}-${{ matrix.slug }}
           path: staging/
           if-no-files-found: error
 
@@ -54,7 +60,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      # Each artifact extracts to artifacts/myplugin-<slug>/<PLUGIN_ID>/...
+      # Each artifact extracts to artifacts/<id>-<slug>/<PLUGIN_ID>/...
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
