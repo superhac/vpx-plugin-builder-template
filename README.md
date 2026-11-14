@@ -11,7 +11,7 @@ distribute them (e.g. from a plugin store).
 ## Quick start
 
 1. Clone this repo (or use it as a GitHub template).
-2. Edit [`plugin.cfg`](plugin.cfg): set your `id`, name, author, link and the
+2. Edit [`plugin.cfg`](plugin.cfg): set your `id`, name, author, version, link and the
    `[libraries]` filenames. **This is the only file you need to edit to rename
    the plugin** (see [Renaming the plugin](#renaming-the-plugin)).
 3. Write your code in [`src/`](src/). Every `.cpp` under it, including subfolders,
@@ -104,7 +104,7 @@ scripts/package.sh linux-x64     # or macos-universal / windows-x64 / linux-aarc
 ```
 
 That stages `dist/<id>/` (containing `plugin.cfg` + the built library) and zips
-it as `dist/<id lowercase>-<slug>.zip`.
+it as `dist/<id lowercase>-<version>-<slug>.zip`.
 
 ## Installing and testing in VPX
 
@@ -244,13 +244,33 @@ builds all five targets on native runners:
 The workflow runs on pushes to `main`/`master`, on pull requests, on version
 tags, and manually from the Actions tab.
 
-Every push uploads per-platform zips (`<id lowercase>-<slug>`) as build
-artifacts. Pushing a `vX.Y.Z` tag also collects them into a GitHub Release.
-Those zips are what your store serves.
+Every push uploads per-platform zips as build artifacts. Pushing a version
+tag also collects them into a GitHub Release. Those zips are what your store
+serves.
 
-```bash
-git tag v1.0.0 && git push origin v1.0.0
-```
+### Versions and releases
+
+The version lives in one place: `version` in [`plugin.cfg`](plugin.cfg). VPX
+shows it in its plugin list, and it's part of every zip name:
+
+| build                      | zip name |
+|----------------------------|----------|
+| release (tag `v1.0.0`)     | `myplugin-1.0.0-linux-x64.zip` |
+| any other push             | `myplugin-1.0.0-dev-<commit>-linux-x64.zip` |
+| `scripts/package.sh`       | `myplugin-1.0.0-linux-x64.zip` |
+
+To release:
+
+1. Set `version` in `plugin.cfg` (e.g. `1.1.0`) and commit.
+2. Tag that commit with the same version and push the tag:
+
+   ```bash
+   git tag v1.1.0 && git push origin v1.1.0
+   ```
+
+The workflow refuses a tag that doesn't match `plugin.cfg` (tag `v1.1.0` with
+`version = "1.0.0"` fails with an error saying so), so the files never report
+a different version than their name.
 
 ## Dependencies
 

@@ -7,7 +7,7 @@
 #        scripts/package.sh windows-x64
 #
 # Produces:  dist/<PLUGIN_ID>/            (folder to drop into VPX plugins dir)
-#            dist/<id lowercase>-<os>-<arch>.zip (the store download)
+#            dist/<id lowercase>-<version>-<os>-<arch>.zip (the store download)
 set -euo pipefail
 
 SLUG="${1:?usage: package.sh <os>-<arch>  (e.g. linux-x64)}"
@@ -15,9 +15,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD="$ROOT/build"
 STAGE="$ROOT/dist"
 
-# Everything is named from the `id` in plugin.cfg.
+# Everything is named from the `id` and `version` in plugin.cfg.
 PLUGIN_ID="$(sed -n 's/^id[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' "$ROOT/plugin.cfg")"
-ZIP="$(echo "$PLUGIN_ID" | tr '[:upper:]' '[:lower:]')-${SLUG}.zip"
+VERSION="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' "$ROOT/plugin.cfg")"
+ZIP="$(echo "$PLUGIN_ID" | tr '[:upper:]' '[:lower:]')-${VERSION}-${SLUG}.zip"
 
 rm -rf "$BUILD" "$STAGE"
 cmake -B "$BUILD" -S "$ROOT" -DCMAKE_BUILD_TYPE=Release

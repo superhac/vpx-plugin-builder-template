@@ -29,11 +29,28 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Artifact/zip names come from the `id` in plugin.cfg (lowercased).
-      - name: Read plugin id
+      # Artifact/zip names come from plugin.cfg: <id lowercase>-<version>-<slug>.
+      #   tag v1.2.3:  myplugin-1.2.3-linux-x64          (the tag must equal "v" + plugin.cfg version)
+      #   other:       myplugin-1.2.3-dev-<commit>-linux-x64
+      - name: Read plugin id and version
         run: |
           id="$(sed -n 's/^id[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' plugin.cfg)"
+          version="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' plugin.cfg)"
+          if [ -z "$version" ]; then
+            echo "::error file=plugin.cfg::plugin.cfg has no version"
+            exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+              echo "::error file=plugin.cfg::Tag $GITHUB_REF_NAME does not match plugin.cfg version \"$version\" (expected tag v$version). Update the version in plugin.cfg, commit, and tag again."
+              exit 1
+            fi
+            label="$version"
+          else
+            label="$version-dev-${GITHUB_SHA::7}"
+          fi
           echo "PLUGIN_SLUG=$(echo "$id" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+          echo "PLUGIN_VERSION_LABEL=$label" >> "$GITHUB_ENV"
 
       # Install your plugin's third-party dependencies here, per platform.
       # Each runner builds natively, so install the library for that OS/arch.
@@ -64,11 +81,11 @@ jobs:
 
       # Upload the FOLDER, not a pre-made zip. upload-artifact always wraps its
       # input in one zip on download — handing it a .zip would nest zip-in-zip.
-      # The downloadable artifact is a single <id>-<slug>.zip containing
-      # the <PLUGIN_ID>/ folder.
+      # The downloadable artifact is a single <id>-<version>-<slug>.zip
+      # containing the <PLUGIN_ID>/ folder.
       - uses: actions/upload-artifact@v7
         with:
-          name: ${{ env.PLUGIN_SLUG }}-${{ matrix.slug }}
+          name: ${{ env.PLUGIN_SLUG }}-${{ env.PLUGIN_VERSION_LABEL }}-${{ matrix.slug }}
           path: staging/
           if-no-files-found: error
 
@@ -82,7 +99,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      # Each artifact extracts to artifacts/<id>-<slug>/<PLUGIN_ID>/...
+      # Each artifact extracts to artifacts/<id>-<version>-<slug>/<PLUGIN_ID>/...
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
@@ -90,7 +107,7 @@ jobs:
         run: |
           mkdir -p release
           for dir in artifacts/*/; do
-            slug="$(basename "$dir")"          # e.g. myplugin-linux-x64
+            slug="$(basename "$dir")"          # e.g. myplugin-1.2.3-linux-x64
             ( cd "$dir" && zip -r "$GITHUB_WORKSPACE/release/${slug}.zip" . )
           done
           ls -l release
