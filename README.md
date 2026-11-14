@@ -239,7 +239,7 @@ builds all five targets on native runners:
 | `linux-aarch64`   | `ubuntu-22.04-arm`  | `linux.aarch64`                 |
 | `windows-x64`     | `windows-latest`    | `windows.x64`                   |
 | `windows-x86`     | `windows-latest`    | `windows.x86`                   |
-| `macos-universal` | `macos-14`          | `macos.x64` + `macos.arm64`     |
+| `macos-universal` | `macos-latest`      | `macos.x64` + `macos.arm64`     |
 
 The workflow runs on pushes to `main`/`master`, on pull requests, on version
 tags, and manually from the Actions tab.

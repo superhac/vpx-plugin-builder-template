@@ -22,7 +22,7 @@ jobs:
           - { slug: linux-aarch64,   runner: ubuntu-22.04-arm, cmake_args: '' }
           - { slug: windows-x64,     runner: windows-latest,   cmake_args: '-A x64' }
           - { slug: windows-x86,     runner: windows-latest,   cmake_args: '-A Win32' }
-          - { slug: macos-universal, runner: macos-14,         cmake_args: '' }
+          - { slug: macos-universal, runner: macos-latest,     cmake_args: '' }
     defaults:
       run:
         shell: bash
